@@ -5,18 +5,114 @@ date: "Wednesday, September 17, 2014"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Synopsis
+My goal in this project is to predict the manner in which people did the exercise by using the provided data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+More information about provided data and their source is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
 
+After loading, exploring and cleaning provided testing data set I create prediction model by using random forest method.
+
+I split provided training data set to two parts in order to be able to estimate out of sample error by cross validation.
+
+Finally I predict values for provided test data set and use predicted values to submit for assignment.
+
+```{r echo=FALSE, results='hide', message=FALSE}
+library(data.table)
+library(caret)
+library(foreach)
+library(randomForest)
+
+set.seed(100)
+
+```
+
+## Load data
 ```{r}
-summary(cars)
+ext.url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/";
+load.data <- function(file.name) {
+  if (!file.exists(file.name)) {
+    download.file(paste(ext.url, file.name, sep = ""), file.name)
+    } 
+  
+  read.csv(file.name, na.strings=c("#DIV/0!", "", "NA"))
+  }
+
+pml.training <- load.data("pml-training.csv")
+
 ```
 
-You can also embed plots, for example:
 
-```{r, echo=FALSE}
-plot(cars)
+## Split data to training and testing sets for future cross validation
+
+Next I have to split provided data in my turn to two sets: training and testing. I will use training set to create model and I will use testing set in order to evaluate out of sample error.
+``` {r}
+inTrain <- createDataPartition(pml.training$classe, p=.60, list=FALSE);
+training <- pml.training[inTrain,]
+testing <- pml.training[-inTrain,]
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Explore training data
+``` {r}
+dim(training)
+
+```
+
+## Preprocess / Clean data
+
+### remove irrelevant columns 
+Some columns are obviously useless in order to make predictions, I have to remove them.
+``` {r}
+feature.set <- colnames(training[, -which(colnames(training) %in% c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window'))])
+training <- training[,feature.set]
+dim(training)
+```
+
+### remove columns with NAs
+Next I remove all columns which contain NA values.
+``` {r}
+feature.set <- colnames(training[,colSums(is.na(training)) == 0])
+training <- training[,feature.set]
+dim(training)
+```
+
+## Build prediction model
+Finally I create model by applying randomForest on cleaned training set of data.
+I did experiment with other models, but did not choose them by reason of accuracy or speed.
+```{r}
+training <- training[,feature.set]
+model <- randomForest(classe ~ .,data = training)
+```
+
+
+## Evaluate expected out of sample error (use cross-validation)
+In order to evaluate out of sample error I apply the model on the testing data set and evaluate predicted values.
+```{r}
+confusionMatrix(predict(model, newdata=testing), testing$classe)
+
+```
+
+## Apply model to the test data set
+At the end I apply model to provided test data set.
+```{r}
+pml.testing <- load.data("pml-testing.csv")
+predictions <- predict(model,newdata=pml.testing)
+predictions
+```
+
+### Generate  files to submit for assignment
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+  }
+
+pml_write_files(predictions)
+```
+
+## Conclusion
+As expected all 20 predicted values are correct answers for all test data provided in this assignment.
+
